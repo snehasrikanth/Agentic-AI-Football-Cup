@@ -18,13 +18,15 @@ This project adapts the AWS Agentic Football Cup sample into deployable, positio
 
 Every two seconds, each agent receives a snapshot of the match state: ball and player positions, possession, score, stamina, current actions, and coach instructions. The agent returns a valid command for its assigned player.
 
-```text
-Match Server → Agent Loop → Five AI Players
-                              ├── Goalkeeper
-                              ├── Defender
-                              ├── Midfielder
-                              ├── Forward 1
-                              └── Forward 2
+```mermaid
+flowchart LR
+    MS[Match Server] <--> AL[Agent Loop]
+    AL <--> AC[Amazon Bedrock AgentCore]
+    AC <--> GK[Goalkeeper<br/>Player 0]
+    AC <--> DEF[Defender<br/>Player 1]
+    AC <--> MID[Midfielder<br/>Player 2]
+    AC <--> FWD1[Forward 1<br/>Player 3]
+    AC <--> FWD2[Forward 2<br/>Player 4]
 ```
 
 The shared library handles agent construction, match-state parsing, command validation, error recovery, and safe fallback behavior.
@@ -34,13 +36,52 @@ The shared library handles agent construction, match-state parsing, command vali
 ```text
 agentic-football-sample-agents/
 ├── BUILD_AND_DEPLOY.md              # Complete workshop and deployment guide
-├── lib/                             # Shared agent framework and tests
+├── lib/                             # Shared library used by every team
+│   ├── agent_base.py                # Agent factory and invoke handler
+│   ├── fallback.py                  # Position-specific fallback behavior
+│   ├── parsing.py                   # JSON command extraction
+│   ├── state.py                     # Game-state summaries for the LLM
+│   ├── _bootstrap.py                # Runtime library-path resolution
+│   └── test_helpers.py              # Mock AgentCore and match-state fixtures
 ├── ai-team-strands-balanced/        # Balanced 1-1-1-2 team
 ├── ai-team-strands-extremely-aggressive/
 ├── ai-team-strands-extremely-defensive/
 ├── ai-team-strands-memory/          # Team with memory capabilities
 └── ai-team-strands-gateway/         # Team with tactical gateway tools
 ```
+
+Each team includes five player agents, deployment scripts, and a team README:
+
+```text
+ai-team-strands-balanced/
+├── ai-gk/                           # Goalkeeper (Player 0)
+├── ai-def/                          # Defender (Player 1)
+├── ai-mid/                          # Midfielder (Player 2)
+├── ai-fwd1/                         # Forward 1 (Player 3)
+├── ai-fwd2/                         # Forward 2 (Player 4)
+├── deploy-all-windows.ps1           # PowerShell deployment script
+├── deploy-all.sh                    # Bash deployment script
+├── deploy_all.py                    # Cross-platform deployment script
+└── README.md
+```
+
+Every player agent contains `src/main.py`, an AgentCore configuration template, Python dependencies, and local tests.
+
+## Resilient agent design
+
+Each agent controls one player through a position-specific system prompt and uses three layers of protection to keep play moving:
+
+```mermaid
+flowchart TD
+    GS[Game-state snapshot] --> LLM[1. LLM response]
+    LLM -->|Valid JSON command| CMD[Execute player command]
+    LLM -->|Timeout or invalid response| FB[2. Rule-based fallback]
+    FB -->|Valid position command| CMD
+    FB -->|Unexpected failure| LR[3. Last-resort safe command]
+    LR --> CMD
+```
+
+The fallback layer uses tactical rules appropriate to each role. If every prior layer fails, a safe command such as `SET_STANCE` prevents the player from freezing during a match.
 
 ## Quick start
 
